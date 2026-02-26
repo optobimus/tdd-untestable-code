@@ -2,24 +2,17 @@ import argon2 from "@node-rs/argon2";
 import pg from "pg";
 
 export class PostgresUserDao {
-  static instance;
-
-  // Why hard to test: Singleton is a global variable so tests cannot isolate
-  static getInstance() {
-    if (!this.instance) {
-      this.instance = new PostgresUserDao();
-    }
-    return this.instance;
+  constructor(pool) {
+    this.db =
+      pool ??
+      new pg.Pool({
+        user: process.env.PGUSER,
+        host: process.env.PGHOST,
+        database: process.env.PGDATABASE,
+        password: process.env.PGPASSWORD,
+        port: process.env.PGPORT,
+      });
   }
-
-  // Why hard to test: database is a global variable so it persists between test runs
-  db = new pg.Pool({
-    user: process.env.PGUSER,
-    host: process.env.PGHOST,
-    database: process.env.PGDATABASE,
-    password: process.env.PGPASSWORD,
-    port: process.env.PGPORT,
-  });
 
   close() {
     this.db.end();
@@ -36,7 +29,7 @@ export class PostgresUserDao {
        where user_id = $1`,
       [userId]
     );
-    return rows.map(this.#rowToUser)[0] || null;
+    return rows.map(this.#rowToUser.bind(this))[0] || null;
   }
 
   async save(user) {
@@ -51,8 +44,9 @@ export class PostgresUserDao {
 }
 
 export class PasswordService {
-  // Hard to test: hardcoded dependency: cannot inject a fake for unit tests
-  users = PostgresUserDao.getInstance();
+  constructor(users) {
+    this.users = users ?? new PostgresUserDao();
+  }
 
   async changePassword(userId, oldPassword, newPassword) {
     const user = await this.users.getById(userId);
